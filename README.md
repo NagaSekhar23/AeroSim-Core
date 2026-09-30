@@ -1,32 +1,32 @@
 # AeroSim-Core
 
-A small C++17 fixed-step software simulation and telemetry-analysis project.
-The current aircraft motion is a straight, constant-speed kinematic model; it
-holds lateral position and altitude fixed. It is not validated aerodynamics,
-flight-qualified software, or a validated digital twin.
+AeroSim-Core is a small C++17 software-simulation project for exploring fixed-step simulation, actuator behavior, telemetry, timing measurements, and a Python anomaly-analysis workflow. It is designed to be easy to build and inspect on a desktop machine.
 
-## C++ build and tests
+> **Scope:** the aircraft motion is a deterministic, straight-line constant-speed kinematic model. It holds lateral position and altitude constant. It is not validated aircraft aerodynamics, a flight-qualified digital twin, or evidence of UAV operational safety. The timing harness measures desktop scheduling and does not provide hard real-time guarantees.
 
-Requires CMake 3.16 or newer and a C++17 compiler (AppleClang/Clang or GCC).
-The CMake targets enable `-Wall -Wextra -Wpedantic` for GCC and Clang-family
-compilers. From the project root:
+[![CI](https://github.com/NagaSekhar23/AeroSim-Core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NagaSekhar23/AeroSim-Core/actions/workflows/ci.yml)
+
+## What it demonstrates
+
+- A reusable C++ core library and a CMake-built command-line simulator.
+- A deterministic 100 Hz (`0.01 s`) update step and a rate-limited software actuator with simulation-time stuck-actuator fault injection.
+- CSV telemetry with exclusive file creation and an experiment completion marker.
+- CTest coverage for simulation, actuator validation and faults, timing statistics, telemetry, and experiment output completion.
+- A Python Isolation Forest analysis and a separate persistence-based stuck-actuator rule, plus synthetic robustness scenarios and C++/Python parity checks.
+- Separate computation and desktop timing benchmark programs. Benchmarks are measurement tools, not CI pass/fail gates.
+
+## Build and run C++
+
+Requirements: CMake 3.16 or newer and a C++17 compiler (AppleClang/Clang or GCC). No third-party C++ libraries are needed.
 
 ```bash
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/aerosim
 ```
 
-The simulator uses a deterministic 0.01-second step. It also has a simple
-rate-limited software actuator and simulation-time stuck-actuator fault. Those
-are software models, not hardware or flight-dynamics models.
-
-## Generate telemetry and run Python analysis
-
-Python 3.12 or newer is used for optional analysis and testing; the C++ build
-does not require Python. Create the telemetry pair in a new
-output directory (the C++ runner refuses to replace existing results):
+Generate a matched nominal and fault-injected telemetry experiment. Use a new output directory for each run; existing files are not overwritten.
 
 ```bash
 ./build/aerosim_experiments \
@@ -34,52 +34,47 @@ output directory (the C++ runner refuses to replace existing results):
   --fault-time 0.75
 ```
 
-The runner writes `experiment_complete.txt` after both CSVs close successfully.
-A missing or incomplete marker means the experiment did not finish; see
-[`TELEMETRY.md`](TELEMETRY.md) for the marker format and validation guidance.
+The experiment runs for two simulation seconds (200 steps) per scenario. Its completion marker is written only after both CSV files close successfully. See [the telemetry guide](TELEMETRY.md) for the schema and how to interpret incomplete output.
 
-Create the documented isolated Python environment, run its tests, and analyze
-that pair:
+## Python analysis
+
+Python 3.12 or newer is used for analysis and its tests; it is optional for building the C++ simulator. From the repository root, create an isolated environment and install the locked packages:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r python/requirements-lock.txt
+```
+
+Run tests, then analyze a telemetry pair:
+
+```bash
 python -m unittest discover -s python/tests -v
 python python/anomaly_analysis.py \
   --nominal telemetry/my-run/nominal.csv \
   --fault telemetry/my-run/fault_injected.csv \
-  --output-dir analysis_output/a-new-run \
+  --output-dir analysis_output/my-run \
   --seed 42 \
   --contamination 0.05 \
   --fault-time-s 0.75
 ```
 
-For the deterministic synthetic robustness matrix, use a fresh output path:
+The Isolation Forest is fit on nominal observations only. Fault labels are evaluation ground truth, not detector inputs. A separate rule-based detector is reported alongside the model. The scenario generator also contains Python equations; parity tests compare matching scenarios against the compiled C++ experiment runner. Other generated robustness scenarios are Python-generated and are not all cross-language checked. Analysis on small synthetic data can produce false alarms or missed detections and does not establish real-world robustness. See the [Python guide](python/README.md).
 
-```bash
-python python/robustness_evaluation.py \
-  --nominal telemetry/my-run/nominal.csv \
-  --output-dir analysis_output/a-new-robustness-run \
-  --seed 42 \
-  --contamination 0.05 \
-  --fault-times-s 0.25 0.75 1.25
+## Project layout
+
+```text
+include/                 Public C++ state, simulator, actuator, telemetry, timing headers
+src/                     Simulator, actuator, timing, telemetry, experiment and test sources
+cmake/                   CMake-driven experiment-output regression test
+python/                  Analysis, robustness, benchmark runner, lock files and unit tests
+docs/                    Architecture, testing and benchmark guides
+.github/workflows/ci.yml C++ and Python continuous-integration jobs
+TELEMETRY.md             CSV schema and output-completion semantics
 ```
 
-See [`python/README.md`](python/README.md) for the feature and detector details.
-Analysis and robustness results are experimental software outputs; synthetic
-evaluation does not establish real-world robustness or UAV safety.
-
-## Benchmarks
-
-The benchmark runner separately measures no-sleep simulator stepping and the
-desktop timing harness. Build and run it using the instructions in
-[`TELEMETRY.md`](TELEMETRY.md). Benchmark results depend on build, machine load,
-and OS scheduling; they are not hard real-time claims or cross-machine
-comparisons. C++ benchmarks are deliberately not CI pass/fail gates.
+For design responsibilities, test commands and measured-performance methodology, see [Architecture](docs/ARCHITECTURE.md), [Testing](docs/TESTING.md), [Benchmarks](docs/BENCHMARKS.md), and [Telemetry](TELEMETRY.md).
 
 ## Continuous integration
 
-GitHub Actions builds and runs CTest on Linux and macOS, and runs the Python
-unit tests on Linux after generating their required telemetry input. Performance
-measurements are not run as CI gates.
+The GitHub Actions workflow builds and runs CTest on Ubuntu and macOS. Its Python job uses Python 3.12, installs `python/requirements-lock.txt` in a virtual environment, builds the C++ experiment runner, generates fresh test telemetry, and runs the Python unit tests. Benchmark measurements are not CI gates. A workflow result verifies only the checks in that run; it does not validate flight dynamics or real-time behavior.

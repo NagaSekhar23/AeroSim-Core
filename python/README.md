@@ -152,3 +152,11 @@ flight readiness.
 This small, synthetic software simulation is for experimentation only. It does
 not model validated aircraft flight dynamics, and anomaly scores can produce
 false positives, including during normal actuator transitions.
+
+## Implementation scope and limits
+
+The C++ source of truth advances simulation time by 0.01 seconds per step. It moves X by constant forward speed times the step and holds Y, altitude (initialized at 100 m with unspecified datum), and speed fixed. The actuator clamps commands to configured position bounds, rate-limits actual position, and freezes actual position when the simulation-time fault activates. These are simplified software equations, not validated aircraft dynamics or hardware actuator behavior.
+
+The Python robustness scenarios intentionally reproduce selected equations so multiple command/fault schedules can be evaluated. Cross-language parity tests compare the default nominal/fault experiment schedules and time-zero fault activation against the compiled `aerosim_experiments` program. Other Python-generated scenario schedules are not all independently checked against C++. The evaluation is therefore useful for software-model experiments, but not evidence of broad detector robustness or flight readiness.
+
+For the C++ component map, see [Architecture](../docs/ARCHITECTURE.md). For clean build and test commands, see [Testing](../docs/TESTING.md). The benchmark runner is documented separately in [Benchmarks](../docs/BENCHMARKS.md).
