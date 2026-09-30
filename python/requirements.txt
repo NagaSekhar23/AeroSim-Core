@@ -1,0 +1,6 @@
+# Python analysis and its tests. Install requirements-lock.txt for repeatable
+# project environments; these ranges are kept for intentional dependency updates.
+numpy>=2.5,<2.6
+pandas>=3.0,<3.1
+matplotlib>=3.11,<3.12
+scikit-learn>=1.9,<2.0

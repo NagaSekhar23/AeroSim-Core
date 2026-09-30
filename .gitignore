@@ -1,0 +1,26 @@
+# CMake and build output
+.DS_Store
+/build/
+/build-bench/
+/aerosim
+benchmark_results/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+analysis_output/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Generated telemetry output
+*.csv
+*.telemetry
+telemetry/
+
+# Local environment files (keep shareable templates such as .env.example)
+.env
+.env.*
+!.env.example
