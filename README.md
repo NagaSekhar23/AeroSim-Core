@@ -75,6 +75,10 @@ TELEMETRY.md             CSV schema and output-completion semantics
 
 For design responsibilities, test commands and measured-performance methodology, see [Architecture](docs/ARCHITECTURE.md), [Testing](docs/TESTING.md), [Benchmarks](docs/BENCHMARKS.md), and [Telemetry](TELEMETRY.md).
 
+## User guide
+
+The [Markdown user guide](docs/USER_GUIDE.md) is the easiest version to read directly on GitHub. The [Word user and developer guide](docs/AeroSim-Core_User_and_Developer_Guide.docx) is also available to download.
+
 ## Continuous integration
 
 The GitHub Actions workflow builds and runs CTest on Ubuntu and macOS. Its Python job uses Python 3.12, installs `python/requirements-lock.txt` in a virtual environment, builds the C++ experiment runner, generates fresh test telemetry, and runs the Python unit tests. Benchmark measurements are not CI gates. A workflow result verifies only the checks in that run; it does not validate flight dynamics or real-time behavior.
