@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -34,7 +35,7 @@ def sample_frame(count: int, has_fault: bool) -> pd.DataFrame:
     positions = [min(0.8, index * 0.02) for index in range(count)]
     labels = [has_fault and index >= count - 5 for index in range(count)]
     if has_fault:
-        positions[-5:] = [positions[-6]] * 5
+        positions[-5:] = [positions[-5]] * 5
     return pd.DataFrame({
         "simulation_time_s": times,
         "position_x_m": [time * 20.0 for time in times],
@@ -94,6 +95,38 @@ class AnomalyAnalysisTests(unittest.TestCase):
         self.assertEqual(metrics["fault_run_false_positive_rate"], 0.5)
         self.assertEqual(metrics["nominal_false_positive_rate"], 0.5)
 
+    def test_pre_activation_anomaly_is_not_reported_as_fault_detection(self):
+        metrics = summarize_detector(
+            pd.Series([False, False, True, True]).to_numpy(),
+            pd.Series([False, True, False, False]).to_numpy(),
+            pd.Series([0.01, 0.02, 0.03, 0.04]).to_numpy(),
+            0.015,
+            pd.Series([False]).to_numpy(),
+        )
+        self.assertEqual(metrics["first_detected_anomaly_time_s"], 0.02)
+        self.assertIsNone(metrics["first_detected_anomaly_at_or_after_fault_time_s"])
+        self.assertIsNone(metrics["detection_latency_s"])
+
+    def test_fault_time_override_must_match_telemetry_activation(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            nominal_path = root / "nominal.csv"
+            fault_path = root / "fault.csv"
+            sample_frame(30, False).to_csv(nominal_path, index=False)
+            fault_frame = sample_frame(30, True)
+            fault_frame["actuator_fault_active"] = [time >= 0.25 for time in fault_frame[
+                "simulation_time_s"
+            ]]
+            fault_frame.to_csv(fault_path, index=False)
+
+            with self.assertRaisesRegex(ValueError, "inconsistent with the fault telemetry"):
+                run_analysis(
+                    nominal_path,
+                    fault_path,
+                    root / "analysis",
+                    fault_time_override=0.20,
+                )
+
     def test_features_exclude_time_and_ground_truth(self):
         frame = sample_frame(3, False)
         features = build_features(frame)
@@ -131,11 +164,30 @@ class AnomalyAnalysisTests(unittest.TestCase):
                 "actuator_tracking.png",
                 "anomaly_scores.png",
                 "detector_flags.png",
+                "analysis_complete.txt",
             ):
                 self.assertTrue((output_path / filename).is_file(), filename)
 
+            original_metrics = (output_path / "metrics.json").read_bytes()
             with self.assertRaises(FileExistsError):
                 run_analysis(nominal_path, fault_path, output_path, seed=7)
+            self.assertEqual((output_path / "metrics.json").read_bytes(), original_metrics)
+
+    def test_incomplete_analysis_output_has_no_completion_marker(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            nominal_path = root / "nominal.csv"
+            fault_path = root / "fault.csv"
+            output_path = root / "analysis"
+            sample_frame(30, False).to_csv(nominal_path, index=False)
+            sample_frame(30, True).to_csv(fault_path, index=False)
+
+            with patch("anomaly_analysis.make_plots", side_effect=OSError("plot failure")):
+                with self.assertRaisesRegex(OSError, "plot failure"):
+                    run_analysis(nominal_path, fault_path, output_path, seed=7)
+
+            self.assertTrue((output_path / "metrics.json").is_file())
+            self.assertFalse((output_path / "analysis_complete.txt").exists())
 
 
 if __name__ == "__main__":

@@ -20,6 +20,8 @@ import sklearn
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
+from output_safety import reserve_output_directory, write_completion_marker
+
 
 REQUIRED_COLUMNS = [
     "simulation_time_s",
@@ -159,9 +161,13 @@ def summarize_detector(
         ground_truth.astype(int), predictions.astype(int), labels=[0, 1]
     ).ravel()
     first_any_indices = np.flatnonzero(predictions)
-    after_fault_indices = np.flatnonzero(predictions & (times >= fault_time))
+    active_fault_detections = np.flatnonzero(
+        predictions & ground_truth.astype(bool) & (times >= fault_time)
+    )
     first_any = float(times[first_any_indices[0]]) if len(first_any_indices) else None
-    first_after = float(times[after_fault_indices[0]]) if len(after_fault_indices) else None
+    first_after = (
+        float(times[active_fault_detections[0]]) if len(active_fault_detections) else None
+    )
     return {
         "true_positives": int(tp),
         "false_positives": int(fp),
@@ -196,6 +202,39 @@ def validate_matched_runs(nominal: pd.DataFrame, fault: pd.DataFrame) -> None:
         atol=1e-12,
     ):
         raise ValueError("Nominal and fault-injected telemetry must use the same simulation time grid")
+
+    active = fault["actuator_fault_active"].to_numpy(dtype=bool)
+    first_active = int(np.flatnonzero(active)[0])
+    if active[first_active:].sum() != len(active) - first_active:
+        raise ValueError("Fault-injected telemetry must keep the fault active after activation")
+
+    shared_columns = [
+        "position_x_m",
+        "position_y_m",
+        "altitude_m",
+        "forward_speed_mps",
+        "actuator_command",
+    ]
+    for column in shared_columns:
+        if not np.allclose(
+            nominal[column].to_numpy(dtype=float),
+            fault[column].to_numpy(dtype=float),
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                f"Nominal and fault-injected telemetry must have matching {column} values"
+            )
+    if not np.allclose(
+        nominal["actuator_position"].to_numpy(dtype=float)[: first_active + 1],
+        fault["actuator_position"].to_numpy(dtype=float)[: first_active + 1],
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        raise ValueError(
+            "Nominal and fault-injected telemetry must have matching actuator positions "
+            "through fault activation"
+        )
 
 
 def make_plots(
@@ -277,6 +316,18 @@ def run_analysis(
     fault_time = observed_fault_time if fault_time_override is None else fault_time_override
     if not math.isfinite(fault_time) or fault_time < 0.0:
         raise ValueError("fault activation time must be finite and non-negative")
+    fault_times = fault["simulation_time_s"].to_numpy(dtype=float)
+    expected_activation_index = int(np.searchsorted(fault_times, fault_time, side="left"))
+    actual_activation_index = int(
+        np.flatnonzero(fault["actuator_fault_active"].to_numpy(dtype=bool))[0]
+    )
+    if (
+        expected_activation_index >= len(fault_times)
+        or expected_activation_index != actual_activation_index
+    ):
+        raise ValueError(
+            "Configured fault activation time is inconsistent with the fault telemetry labels"
+        )
 
     split_at = int(len(nominal) * TRAINING_FRACTION)
     if split_at < 2 or split_at >= len(nominal):
@@ -378,25 +429,16 @@ def run_analysis(
         ],
     }
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    expected_outputs = [
-        output_dir / "metrics.json",
-        output_dir / "fault_predictions.csv",
-        output_dir / "actuator_tracking.png",
-        output_dir / "anomaly_scores.png",
-        output_dir / "detector_flags.png",
-    ]
-    existing_outputs = [path.name for path in expected_outputs if path.exists()]
-    if existing_outputs:
-        raise FileExistsError(
-            f"Refusing to overwrite existing analysis outputs: {', '.join(existing_outputs)}"
-        )
+    reserve_output_directory(output_dir, "analysis")
 
     predictions.to_csv(output_dir / "fault_predictions.csv", index=False)
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as report:
         json.dump(metrics, report, indent=2, allow_nan=False)
         report.write("\n")
     make_plots(nominal, fault, predictions, fault_time, output_dir)
+    write_completion_marker(
+        output_dir, "analysis_complete.txt", "AeroSim-Core analysis complete\n"
+    )
     return metrics
 
 

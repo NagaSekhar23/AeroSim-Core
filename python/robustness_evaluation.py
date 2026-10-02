@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from output_safety import reserve_output_directory, write_completion_marker
+
 from anomaly_analysis import (
     CONTAMINATION,
     FEATURE_COLUMNS,
@@ -34,6 +36,16 @@ ACTUATOR_MAXIMUM = 1.0
 ACTUATOR_RATE_LIMIT_PER_S = 2.0
 DEFAULT_FAULT_TIMES_S = (0.25, 0.75, 1.25)
 RULE_PERSISTENCE_SAMPLES = 3
+
+
+def _fault_time_token(fault_time_s: float) -> str:
+    """Return a readable, round-trip-unique token for an accepted float time."""
+    return (
+        repr(float(fault_time_s))
+        .replace("-", "m")
+        .replace(".", "p")
+        .replace("+", "plus")
+    )
 
 
 def generate_scenario(
@@ -109,7 +121,7 @@ def build_scenario_matrix(fault_times_s: tuple[float, ...]) -> list[dict[str, An
             raise ValueError(
                 f"fault activation times must be between 0 and {RUN_DURATION_S} seconds"
             )
-        stamp = f"{fault_time:.2f}".replace(".", "p")
+        stamp = _fault_time_token(fault_time)
         scenarios.append({
             "scenario": f"fault_constant_t{stamp}",
             "kind": "fault_injected",
@@ -364,10 +376,7 @@ def evaluate_robustness(
         ],
     }
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    expected = [output_dir / "metrics.json", output_dir / "per_scenario_metrics.csv"]
-    if any(path.exists() for path in expected) or (output_dir / "predictions").exists():
-        raise FileExistsError(f"Refusing to overwrite robustness results in {output_dir}")
+    reserve_output_directory(output_dir, "robustness")
 
     (output_dir / "predictions").mkdir()
     pd.DataFrame(flattened).to_csv(output_dir / "per_scenario_metrics.csv", index=False)
@@ -379,6 +388,11 @@ def evaluate_robustness(
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as metrics_file:
         json.dump(report, metrics_file, indent=2, allow_nan=False)
         metrics_file.write("\n")
+    write_completion_marker(
+        output_dir,
+        "robustness_complete.txt",
+        "AeroSim-Core robustness evaluation complete\n",
+    )
     return report
 
 

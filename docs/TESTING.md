@@ -43,6 +43,8 @@ AEROSIM_EXPERIMENTS=./build/aerosim_experiments \
 
 The parity tests need the actual compiled experiment-runner executable. The environment variable above makes its path explicit; the tests otherwise use their documented default. They compare matching C++ and Python telemetry, including header order, numeric state and actuator values, and simulation-time fault behavior within floating-point tolerances. The checks cover the matched experiment command schedule and zero-time activation case, not every synthetic robustness scenario.
 
+The robustness evaluation test generates its nominal input by running that executable into a temporary directory. A clean checkout does not need pre-existing `telemetry/my-run` files.
+
 The Python tests use temporary directories for their outputs. The experiment output CTest uses a build-tree test directory. Do not point tests at historical benchmark, telemetry, or analysis result directories.
 
 ## CI scope

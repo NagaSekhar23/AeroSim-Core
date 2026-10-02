@@ -57,7 +57,10 @@ python python/anomaly_analysis.py \
 If the configured activation time is known, it can be supplied with
 `--fault-time-s 0.75`. Otherwise, the pipeline infers it from the first active
 fault record in the fault CSV. Use a fresh output directory each time; the
-pipeline refuses to replace existing result files.
+pipeline atomically reserves it and refuses to reuse any existing path. A
+failed run can leave partial files in its reserved directory; consume its
+results only when `analysis_complete.txt` exists. The marker is published
+after the CSV, metrics, and plots have been written.
 
 The output directory contains:
 
@@ -68,6 +71,7 @@ The output directory contains:
 - `actuator_tracking.png`: nominal and fault-run commands and actual positions.
 - `anomaly_scores.png`: fault-run anomaly scores/flags and activation time.
 - `detector_flags.png`: Isolation Forest and rule-based detection flags together.
+- `analysis_complete.txt`: completion marker written last after all outputs close.
 
 The model features are `actuator_command`, `actuator_position`, their
 difference (`actuator_tracking_error`), and the one-step actuator position
@@ -141,7 +145,11 @@ two detectors and include confusion counts, precision, recall, F1, false
 positive rate, and detection latency. Metrics with zero denominators are JSON
 `null` and include an explanation in `undefined_metrics`. Output files are
 `metrics.json`, `per_scenario_metrics.csv`, and a CSV per scenario under
-`predictions/`. Existing outputs are never replaced.
+`predictions/`. Fault-time identifiers preserve enough precision to distinguish
+close configured times. The output directory is reserved without reusing an
+existing path, and `robustness_complete.txt` is published only after every CSV
+and the metrics report are written. If the marker is absent, treat the output
+directory as incomplete. Existing outputs are never replaced.
 
 A fault that freezes an actuator exactly at its commanded position produces no
 tracking error. With these telemetry signals, that case is not observable to
